@@ -73,20 +73,23 @@ public class UploadFileMessage extends ComputerServerMessage {
                 var digest = new byte[FileUpload.CHECKSUM_LENGTH];
                 buf.readBytes(digest);
 
-                files.add(new FileUpload(name, ByteBuffer.allocateDirect(size), digest));
+                // Allocated on first use, once the packet has been checked against the open menu.
+                files.add(new FileUpload(name, size, digest));
             }
         } else {
             files = null;
         }
 
         var nSlices = buf.readVarInt();
+        // Each slice takes at least 4 bytes; don't presize the list from an untrusted count.
+        if (nSlices > buf.readableBytes() / 4) throw new DecoderException("Too many slices");
         var slices = this.slices = new ArrayList<>(nSlices);
         for (var i = 0; i < nSlices; i++) {
             int fileId = buf.readUnsignedByte();
             var offset = buf.readVarInt();
 
             var size = buf.readUnsignedShort();
-            if (size > MAX_PACKET_SIZE) throw new DecoderException("File is too large");
+            if (size > MAX_PACKET_SIZE || size > buf.readableBytes()) throw new DecoderException("File is too large");
 
             var buffer = ByteBuffer.allocateDirect(size);
             buf.readBytes(buffer);
