@@ -6,7 +6,9 @@ package dan200.computercraft.core.filesystem;
 
 import com.google.common.io.MoreFiles;
 import com.google.common.io.RecursiveDeleteOption;
+import dan200.computercraft.api.filesystem.MountConstants;
 import dan200.computercraft.api.filesystem.WritableMount;
+import dan200.computercraft.api.lua.LuaValues;
 import dan200.computercraft.test.core.filesystem.WritableMountContract;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
@@ -19,6 +21,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class WritableFileMountTest implements WritableMountContract {
     private final List<Path> cleanup = new ArrayList<>();
@@ -41,6 +45,31 @@ public class WritableFileMountTest implements WritableMountContract {
     @SuppressWarnings("JUnitMethodInvoked")
     public void Writing_uses_latest_file_size() throws IOException {
         WritableMountContract.super.Writing_uses_latest_file_size();
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS) // Windows doesn't allow deleting a file with open handles.
+    public void Deleting_an_open_file_frees_space_on_close() throws IOException {
+        var access = createExisting(CAPACITY);
+        var mount = access.mount();
+
+        var handle = mount.openFile("file.txt", MountConstants.WRITE_OPTIONS);
+        handle.write(LuaValues.encode(LONG_CONTENTS));
+        var reader = mount.openFile("file.txt", MountConstants.READ_OPTIONS);
+
+        // The file's data stays on disk while a handle is open, so it must still count against the capacity.
+        mount.delete("file.txt");
+        assertEquals(CAPACITY - LONG_CONTENTS.length(), mount.getRemainingSpace());
+
+        handle.write(LuaValues.encode("test"));
+        assertEquals(CAPACITY - LONG_CONTENTS.length() - 4, mount.getRemainingSpace());
+
+        handle.close();
+        assertEquals(CAPACITY - LONG_CONTENTS.length() - 4, mount.getRemainingSpace());
+
+        reader.close();
+        assertEquals(CAPACITY, mount.getRemainingSpace());
+        assertEquals(access.computeRemainingSpace(), mount.getRemainingSpace(), "Free space is inconsistent");
     }
 
     private static final class MountAccessImpl implements MountAccess {
