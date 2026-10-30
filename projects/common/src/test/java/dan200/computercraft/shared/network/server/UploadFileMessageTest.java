@@ -10,6 +10,7 @@ import dan200.computercraft.test.core.ArbitraryByteBuffer;
 import dan200.computercraft.test.shared.FakeContainer;
 import dan200.computercraft.test.shared.WithMinecraft;
 import io.netty.buffer.Unpooled;
+import io.netty.handler.codec.DecoderException;
 import net.jqwik.api.*;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -18,6 +19,7 @@ import org.hamcrest.Matcher;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static dan200.computercraft.shared.network.server.UploadFileMessage.*;
@@ -27,6 +29,7 @@ import static dan200.computercraft.test.core.CustomMatchers.containsWith;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @WithMinecraft
 public class UploadFileMessageTest {
@@ -139,5 +142,42 @@ public class UploadFileMessageTest {
             contramap(equalTo(upload.getChecksum()), "checksum", FileUpload::getChecksum),
             contramap(bufferEqual(upload.getBytes()), "bytes", FileUpload::getBytes)
         );
+    }
+
+    /**
+     * Start an upload packet without any files, up to the slice count.
+     *
+     * @return The packet so far, positioned to write the slice count.
+     */
+    private static RegistryFriendlyByteBuf uploadHeader() {
+        var buffer = new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
+        buffer.writeVarInt(0); // Container id
+        buffer.writeUUID(UUID.randomUUID());
+        buffer.writeByte(FLAG_FIRST | FLAG_LAST);
+        buffer.writeVarInt(0); // No files
+        return buffer;
+    }
+
+    /**
+     * The slice count comes from the client, and must not size an allocation beyond what the packet can hold.
+     */
+    @org.junit.jupiter.api.Test
+    public void testRejectsSliceCountLargerThanPacket() {
+        var buffer = uploadHeader();
+        buffer.writeVarInt(Integer.MAX_VALUE);
+        assertThrows(DecoderException.class, () -> STREAM_CODEC.decode(buffer));
+    }
+
+    /**
+     * A slice can't claim more bytes than the packet contains.
+     */
+    @org.junit.jupiter.api.Test
+    public void testRejectsSliceLargerThanPacket() {
+        var buffer = uploadHeader();
+        buffer.writeVarInt(1); // One slice
+        buffer.writeByte(0); // File id
+        buffer.writeVarInt(0); // Offset
+        buffer.writeShort(MAX_PACKET_SIZE); // Size, but no data follows
+        assertThrows(DecoderException.class, () -> STREAM_CODEC.decode(buffer));
     }
 }
