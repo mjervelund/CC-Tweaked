@@ -43,6 +43,12 @@ final class WiredNetworkImpl {
             // We're going to assimilate a node. Copy across all edges and vertices.
             if (!hasU || !hasV) {
                 var other = hasU ? wiredV.network : wiredU.network;
+
+                // Always move the smaller network into the larger one. Otherwise placing a cable next to a large
+                // network copies the whole network into the new cable's one, and laying a line of cables is quadratic.
+                // other.connect takes our lock again (it is reentrant), so locks are still acquired in the same order.
+                if (other.nodes.size() > nodes.size()) return other.connect(nodeU, nodeV);
+
                 other.lock.writeLock().lock();
                 try {
                     // Cache several properties for iterating over later
