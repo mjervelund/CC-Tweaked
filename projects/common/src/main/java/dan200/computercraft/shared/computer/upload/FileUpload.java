@@ -20,7 +20,7 @@ public class FileUpload {
 
     private final String name;
     private final int length;
-    private final ByteBuffer bytes;
+    private @Nullable ByteBuffer bytes;
     private final byte[] checksum;
 
     public FileUpload(String name, ByteBuffer bytes, byte[] checksum) {
@@ -30,11 +30,27 @@ public class FileUpload {
         this.checksum = checksum;
     }
 
+    /**
+     * Create an upload whose contents are only allocated when first used. This is used when receiving uploads, so that
+     * a packet can't make the server allocate a file before it has been checked.
+     *
+     * @param name     The file name.
+     * @param length   The file length.
+     * @param checksum The expected checksum.
+     */
+    public FileUpload(String name, int length, byte[] checksum) {
+        this.name = name;
+        this.length = length;
+        this.checksum = checksum;
+    }
+
     public String getName() {
         return name;
     }
 
     public ByteBuffer getBytes() {
+        var bytes = this.bytes;
+        if (bytes == null) bytes = this.bytes = ByteBuffer.allocate(length);
         return bytes;
     }
 
@@ -48,7 +64,7 @@ public class FileUpload {
 
     public boolean checksumMatches() {
         // This is meant to be a checksum. Doesn't need to be cryptographically secure, hence non-constant time.
-        var digest = getDigest(bytes);
+        var digest = getDigest(getBytes());
         return digest != null && Arrays.equals(checksum, digest);
     }
 
