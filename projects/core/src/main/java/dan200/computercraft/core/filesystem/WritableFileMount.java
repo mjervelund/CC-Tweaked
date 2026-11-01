@@ -17,6 +17,8 @@ import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 
 import static dan200.computercraft.api.filesystem.MountConstants.*;
@@ -31,6 +33,13 @@ public class WritableFileMount extends FileMount implements WritableMount {
     protected final File rootFile;
     private final long capacity;
     private long usedSpace;
+
+    /**
+     * Files with open handles, keyed by {@link BasicFileAttributes#fileKey()}. A deleted file keeps its space while a
+     * handle to it is open, so its size is only given back once the last handle is closed. Otherwise deleting files
+     * with open handles would let a computer use many times its capacity.
+     */
+    private final Map<Object, OpenFile> openFiles = new HashMap<>();
 
     public WritableFileMount(File rootFile, long capacity) {
         super(rootFile.toPath());
@@ -128,9 +137,15 @@ public class WritableFileMount extends FileMount implements WritableMount {
 
         // Then delete
         var fileSize = file.isDirectory() ? 0 : file.length();
+        var openFile = file.isDirectory() ? null : getOpenFile(file.toPath());
         var success = file.delete();
         if (success) {
-            usedSpace -= Math.max(MINIMUM_FILE_SIZE, fileSize);
+            if (openFile != null) {
+                // The space is still in use until the last handle is closed.
+                openFile.deleted = true;
+            } else {
+                usedSpace -= Math.max(MINIMUM_FILE_SIZE, fileSize);
+            }
         } else {
             throw new IOException(ACCESS_DENIED);
         }
@@ -191,18 +206,43 @@ public class WritableFileMount extends FileMount implements WritableMount {
         }
 
         // Allowing seeking when appending is not recommended, so we use a separate channel.
+        SeekableByteChannel channel;
         try {
-            return new CountingChannel(Files.newByteChannel(file, options));
+            channel = Files.newByteChannel(file, options);
         } catch (IOException e) {
             throw remapException(path, e);
         }
+
+        var key = getFileKey(file);
+        if (key != null) openFiles.computeIfAbsent(key, k -> new OpenFile()).handles++;
+        return new CountingChannel(channel, key);
+    }
+
+    private static @Nullable Object getFileKey(Path file) {
+        try {
+            return Files.readAttributes(file, BasicFileAttributes.class).fileKey();
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private @Nullable OpenFile getOpenFile(Path file) {
+        var key = getFileKey(file);
+        return key == null ? null : openFiles.get(key);
+    }
+
+    private static final class OpenFile {
+        int handles;
+        boolean deleted;
     }
 
     private class CountingChannel implements SeekableByteChannel {
         private final SeekableByteChannel channel;
+        private final @Nullable Object fileKey;
 
-        CountingChannel(SeekableByteChannel channel) {
+        CountingChannel(SeekableByteChannel channel, @Nullable Object fileKey) {
             this.channel = channel;
+            this.fileKey = fileKey;
         }
 
         @Override
@@ -234,6 +274,13 @@ public class WritableFileMount extends FileMount implements WritableMount {
 
         @Override
         public void close() throws IOException {
+            if (fileKey != null && channel.isOpen()) {
+                var openFile = openFiles.get(fileKey);
+                if (openFile != null && --openFile.handles <= 0) {
+                    openFiles.remove(fileKey);
+                    if (openFile.deleted) usedSpace -= Math.max(MINIMUM_FILE_SIZE, channel.size());
+                }
+            }
             channel.close();
         }
 
