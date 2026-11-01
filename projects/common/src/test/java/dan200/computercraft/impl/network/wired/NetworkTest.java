@@ -61,6 +61,31 @@ public class NetworkTest {
     }
 
     @Test
+    public void testConnectMergesSmallerIntoLarger() {
+        NetworkElement
+            aE = new NetworkElement("a"),
+            bE = new NetworkElement("b"),
+            cE = new NetworkElement("c");
+
+        WiredNodeImpl
+            aN = aE.getNode(),
+            bN = bE.getNode(),
+            cN = cE.getNode();
+
+        aN.connectTo(bN);
+        var large = aN.getNetwork();
+
+        // C's network is the smaller one, so it should be merged into A's, even though we connect from C.
+        assertTrue(cN.connectTo(aN), "Must be able to add connection");
+        assertSame(large, cN.getNetwork(), "C should join the larger network");
+        assertSame(large, aN.getNetwork(), "A's network should not change");
+        assertEquals(Set.of(aN, bN, cN), nodes(large), "Network should be A, B and C");
+
+        assertEquals(Set.of("a", "b", "c"), aE.allPeripherals().keySet(), "A's peripheral set should be A, B, C");
+        assertEquals(Set.of("a", "b", "c"), cE.allPeripherals().keySet(), "C's peripheral set should be A, B, C");
+    }
+
+    @Test
     public void testDisconnectNoChange() {
         NetworkElement
             aE = new NetworkElement("a"),
