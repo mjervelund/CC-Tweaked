@@ -12,6 +12,9 @@ import dan200.computercraft.core.apis.TermAPI
 import dan200.computercraft.core.computer.ComputerSide
 import dan200.computercraft.gametest.api.*
 import dan200.computercraft.shared.ModRegistry
+import dan200.computercraft.shared.computer.blocks.ComputerBlockEntity
+import dan200.computercraft.shared.computer.core.ServerComputer
+import dan200.computercraft.shared.computer.core.ServerContext
 import dan200.computercraft.test.core.assertArrayEquals
 import dan200.computercraft.test.core.computer.getApi
 import net.minecraft.client.input.KeyEvent
@@ -116,6 +119,44 @@ class Computer_Test {
             context.level.explode(null, explosionPos.x, explosionPos.y, explosionPos.z, 2.0f, Level.ExplosionInteraction.TNT)
 
             context.assertItemEntityCountIs(ModRegistry.Items.COMPUTER_NORMAL.get(), 1)
+        }
+    }
+
+    /**
+     * Check computers are not unloaded while the server's ticks are frozen (`/tick freeze`). Block entities stop
+     * ticking, so they no longer keep the computer alive, but the server still ticks computers.
+     *
+     * @see [#1876](https://github.com/cc-tweaked/CC-Tweaked/issues/1876)
+     */
+    @GameTest(isolated = true)
+    fun Survives_tick_freeze(context: GameTestHelper) = context.sequence {
+        lateinit var computer: ServerComputer
+        thenWaitUntil {
+            computer = context.getBlockEntity(BlockPos(2, 1, 2), ComputerBlockEntity::class.java).serverComputer
+                ?: context.abort("Computer has not been created")
+            if (!computer.isOn) context.abort("Computer is not on")
+        }
+        thenExecute {
+            // The game test runner does not tick while frozen, so simulate the server ticks which happen meanwhile.
+            val server = context.level.server
+            val tickRate = server.tickRateManager()
+            tickRate.setFrozen(true)
+            try {
+                tickRate.tick()
+                repeat(200) { ServerContext.get(server).tick() }
+            } finally {
+                tickRate.setFrozen(false)
+                tickRate.tick()
+            }
+
+            assertTrue(computer.isOn, "Computer is still on")
+            assertTrue(ServerContext.get(server).registry().computers.contains(computer), "Computer is still registered")
+        }
+        thenIdle(2)
+        thenExecute {
+            val current = context.getBlockEntity(BlockPos(2, 1, 2), ComputerBlockEntity::class.java).serverComputer
+            assertTrue(current === computer, "Computer was not recreated after unfreezing")
+            assertTrue(computer.isOn, "Computer is still on after unfreezing")
         }
     }
 

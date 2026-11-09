@@ -153,8 +153,8 @@ object TestHooks {
         method.getAnnotation(GameTest::class.java)?.let { testInfo ->
             if (!TestTags.isEnabled(testInfo.tag)) return
 
-            val environment: Holder<TestEnvironmentDefinition<*>> = when (testInfo.tag) {
-                TestTags.COMMON -> defaultEnvironment
+            val environment: Holder<TestEnvironmentDefinition<*>> = when {
+                testInfo.tag == TestTags.COMMON && !testInfo.isolated -> defaultEnvironment
                 else -> Holder.direct(ClientTestEnvironment())
             }
 
