@@ -103,6 +103,8 @@ public class Computer {
     }
 
     public void shutdown() {
+        // Drop any start still waiting for the start delay, otherwise the computer turns on again once it expires.
+        startRequested = false;
         executor.queueStop(false, false);
     }
 
@@ -111,6 +113,7 @@ public class Computer {
     }
 
     public void unload() {
+        startRequested = false;
         executor.queueStop(false, true);
     }
 
