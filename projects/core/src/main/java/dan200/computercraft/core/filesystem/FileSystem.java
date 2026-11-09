@@ -170,12 +170,14 @@ public class FileSystem {
     }
 
     public synchronized boolean exists(String path) throws FileSystemException {
+        if (hasInvalidChars(path)) return false;
         path = sanitizePath(path);
         var mount = getMount(path);
         return mount.exists(path);
     }
 
     public synchronized boolean isDir(String path) throws FileSystemException {
+        if (hasInvalidChars(path)) return false;
         path = sanitizePath(path);
         var mount = getMount(path);
         return mount.isDirectory(path);
@@ -357,6 +359,21 @@ public class FileSystem {
     // IMPORTANT: Both arrays are sorted by ASCII value.
     private static final char[] specialChars = new char[]{ '"', '*', ':', '<', '>', '?', '|' };
     private static final char[] specialCharsAllowWildcards = new char[]{ '"', ':', '<', '>', '|' };
+
+    /**
+     * Determine whether a path contains characters which {@link #sanitizePath(String)} would strip out. Such characters
+     * can never appear in a file name, so a path containing them cannot exist.
+     *
+     * @param path The path to check.
+     * @return Whether this path contains invalid characters.
+     */
+    private static boolean hasInvalidChars(String path) {
+        for (var i = 0; i < path.length(); i++) {
+            var c = path.charAt(i);
+            if (c < 32 || Arrays.binarySearch(specialChars, c) >= 0) return true;
+        }
+        return false;
+    }
 
     public static String sanitizePath(String path, boolean allowWildcards) {
         // Allow windowsy slashes
