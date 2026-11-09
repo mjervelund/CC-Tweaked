@@ -41,6 +41,11 @@ annotation class GameTest(
      * The tag associated with this test, denoting when it should run.
      */
     val tag: String = TestTags.COMMON,
+
+    /**
+     * Whether this test should run in its own batch, for instance because it changes global server state.
+     */
+    val isolated: Boolean = false,
 )
 
 /**
@@ -51,8 +56,8 @@ annotation class GameTest(
 annotation class GameTestGenerator
 
 /**
- * A test environment for client game tests ([TestTags.Client]), which ensures
- * the test runs in a unique batch.
+ * A test environment for client game tests ([TestTags.Client]) and [isolated][GameTest.isolated] tests, which
+ * ensures the test runs in a unique batch.
  */
 class ClientTestEnvironment(val time: Int = Times.NOON) : TestEnvironmentDefinition<Unit> {
     override fun setup(level: ServerLevel) {

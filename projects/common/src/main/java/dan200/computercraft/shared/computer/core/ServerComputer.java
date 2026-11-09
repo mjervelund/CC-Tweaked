@@ -112,7 +112,9 @@ public class ServerComputer implements ComputerEnvironment {
     }
 
     protected void tickServer() {
-        ticksSincePing++;
+        // Block entities do not tick (and so do not call keepAlive()) while the game is frozen with /tick freeze, so
+        // only count ticks which run game elements. Otherwise the computer is unloaded after 5 seconds. See #1876.
+        if (level.tickRateManager().runsNormally()) ticksSincePing++;
         computer.tick();
         if (terminalChanged.getAndSet(false)) onTerminalChanged();
     }
