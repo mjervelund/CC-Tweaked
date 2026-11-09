@@ -228,6 +228,20 @@ describe("The fs library", function()
         end)
     end)
 
+    describe("fs.exists and fs.isDir", function()
+        it("an existing directory", function()
+            expect(fs.exists("rom")):eq(true)
+            expect(fs.isDir("rom")):eq(true)
+        end)
+
+        it("paths with characters which cannot appear in a file name do not exist", function()
+            for _, path in ipairs { "*", "rom/*", "?", "rom/??", "a:b", "rom/<>", "\"", "|", "rom\0" } do
+                expect(fs.exists(path)):describe(path):eq(false)
+                expect(fs.isDir(path)):describe(path):eq(false)
+            end
+        end)
+    end)
+
     describe("fs.getSize", function()
         it("fails on non-existent nodes", function()
             expect.error(fs.getSize, "rom/x"):eq("/rom/x: No such file")
